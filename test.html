@@ -4,240 +4,222 @@
 <meta charset="UTF-8">
 <title>自責計算</title>
 <style>
-body { font-family:sans-serif; padding:20px; }
-h1 { text-align:center; margin-bottom:10px; }
-#ym { text-align:center; font-size:22px; margin-bottom:10px; }
-select { font-size:18px; margin:0 5px; }
-#calendar { display:grid; grid-template-columns:repeat(7,1fr); gap:4px; }
-.day { border:1px solid #ccc; min-height:110px; padding:4px; cursor:pointer; position:relative; }
-.weekday { text-align:center; font-weight:bold; font-size:12px; }
-.day-number { font-weight:bold; }
-.shift { font-size:12px; margin-top:2px; white-space:pre-line; }
-.total { font-weight:bold; font-size:12px; margin-top:2px; }
-#modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); justify-content:center; align-items:center; }
-#modalContent { background:#fff; width:320px; padding:15px; }
-input, select { font-size:14px; }
-#monthly { margin-top:10px; font-weight:bold; font-size:16px; white-space:pre-line; }
-button { margin-top:4px; font-size:12px; }
+body { font-family: sans-serif; padding: 10px; }
+h1 { text-align: center; margin-bottom: 10px; }
+header { text-align:center; margin-bottom:10px; font-size:20px; }
+select { font-size: 18px; margin:0 5px; }
+#calendar { display:grid; grid-template-columns:repeat(7,1fr); gap:5px; }
+.day { border:1px solid #ccc; min-height:120px; padding:4px; cursor:pointer; position:relative; }
+.weekday { text-align:center; font-weight:bold; background:#eee; }
+.day-number { font-weight:bold; margin-bottom:2px; }
+.shift { font-size:12px; margin:2px 0; white-space:pre-line; }
+.total { font-size:12px; font-weight:bold; margin-top:4px; }
+#modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); justify-content:center; align-items:center; }
+#modalContent { background:#fff; padding:15px; width:320px; }
+input, select { margin-bottom:4px; width:100%; box-sizing:border-box; }
+button { margin-top:4px; }
+#monthly { margin-top:15px; font-size:16px; font-weight:bold; white-space:pre-line; }
 </style>
 </head>
 <body>
 
 <h1>自責計算</h1>
 
-<div id="ym">
-  <select id="year"></select>年
-  <select id="month"></select>月
-</div>
+<header>
+<select id="year"></select> 年
+<select id="month"></select> 月
+</header>
 
 <div id="calendar"></div>
-
 <div id="monthly"></div>
 
-<!-- モーダル -->
 <div id="modal">
   <div id="modalContent">
     <h3 id="modalDate"></h3>
     名前：
-    <select id="nameSelect" style="width:150px;"></select>
+    <select id="nameSelect"></select>
     <button onclick="deleteName()">名前削除</button><br><br>
-    新しい名前：<input id="newName" placeholder="新しい名前"><br><br>
+    新しい名前：<input id="newName" placeholder="新しい名前を追加"><br>
     出勤：<input type="time" id="start"><br>
     退勤：<input type="time" id="end"><br>
     休憩開始：<input type="time" id="breakStart"><br>
-    休憩終了：<input type="time" id="breakEnd"><br><br>
+    休憩終了：<input type="time" id="breakEnd"><br>
     <button onclick="saveShift()">保存</button>
     <button onclick="closeModal()">閉じる</button>
   </div>
 </div>
 
 <script>
-let shifts = JSON.parse(localStorage.getItem('shifts') || '{}');
-let names = JSON.parse(localStorage.getItem('names') || []);
+/* ===== localStorage ===== */
+let shifts = JSON.parse(localStorage.getItem("shifts")||"{}");
+let names = JSON.parse(localStorage.getItem("names")||[]);
 if(!names.includes("社員")) names.push("社員");
-localStorage.setItem('names', JSON.stringify(names));
-
-const yearSel = document.getElementById('year');
-const monthSel = document.getElementById('month');
-const now = new Date();
-for(let y=2024;y<=2030;y++) { yearSel.add(new Option(y,y)); }
-for(let m=1;m<=12;m++) { monthSel.add(new Option(m,m)); }
-yearSel.value = now.getFullYear(); monthSel.value = now.getMonth()+1;
-yearSel.onchange = monthSel.onchange = renderCalendar;
-
 let selectedDate = "";
 
-// モーダル
-const modal = document.getElementById('modal');
-const modalDateText = document.getElementById('modalDate');
-const nameSelect = document.getElementById('nameSelect');
-const newNameInput = document.getElementById('newName');
-const startInput = document.getElementById('start');
-const endInput = document.getElementById('end');
-const breakStartInput = document.getElementById('breakStart');
-const breakEndInput = document.getElementById('breakEnd');
+/* ===== 年月初期化 ===== */
+const yearSel = document.getElementById("year");
+const monthSel = document.getElementById("month");
+const now = new Date();
+for(let y=2024;y<=2030;y++) yearSel.add(new Option(y,y));
+for(let m=1;m<=12;m++) monthSel.add(new Option(m,m));
+yearSel.value = now.getFullYear();
+monthSel.value = now.getMonth()+1;
+yearSel.onchange = monthSel.onchange = renderCalendar;
 
-function updateNameSelect(){
-  nameSelect.innerHTML = "";
-  nameSelect.add(new Option("選択してください",""));
-  names.forEach(n=>nameSelect.add(new Option(n,n)));
-}
+/* ===== 名前セレクト ===== */
+const nameSelect = document.getElementById("nameSelect");
+const newNameInput = document.getElementById("newName");
 
-function openModal(date){
-  selectedDate = date;
-  modalDateText.textContent = date;
-  modal.style.display = "flex";
-  newNameInput.value = startInput.value = endInput.value = breakStartInput.value = breakEndInput.value = "";
-  updateNameSelect();
-}
-
-function closeModal(){ modal.style.display="none"; }
-
-function saveShift(){
-  let name = newNameInput.value.trim() || nameSelect.value;
-  if(!name || !startInput.value || !endInput.value) return alert("名前・出勤・退勤を入力してください");
-  if(!names.includes(name)) { names.push(name); localStorage.setItem('names',JSON.stringify(names)); }
-
-  if(!shifts[selectedDate]) shifts[selectedDate]=[];
-  shifts[selectedDate].push({
-    name,
-    start:startInput.value,
-    end:endInput.value,
-    breakStart:breakStartInput.value,
-    breakEnd:breakEndInput.value
-  });
-  localStorage.setItem('shifts',JSON.stringify(shifts));
-  closeModal();
-  renderCalendar();
-}
-
-function deleteName(){
-  const name = nameSelect.value;
-  if(!name) return;
-  if(!confirm(`${name} を名前一覧から削除しますか？\n※既存シフトは残ります`)) return;
-  names = names.filter(n=>n!==name);
-  localStorage.setItem('names',JSON.stringify(names));
-  updateNameSelect();
-}
-
-// カレンダー描画
+/* ===== カレンダー描画 ===== */
 function renderCalendar(){
-  const cal = document.getElementById('calendar');
+  const cal = document.getElementById("calendar");
   cal.innerHTML = "";
-  const y = +yearSel.value, m = +monthSel.value;
-  const weekdays = ["日","月","火","水","木","金","土"];
-
-  // 曜日行
-  weekdays.forEach(w=>{
-    const div = document.createElement("div");
-    div.className = "weekday";
-    div.textContent = w;
-    cal.appendChild(div);
-  });
-
+  const y = +yearSel.value;
+  const m = +monthSel.value;
+  const days = new Date(y,m,0).getDate();
   const firstDay = new Date(y,m-1,1).getDay();
-  const lastDate = new Date(y,m,0).getDate();
+  const w = ["日","月","火","水","木","金","土"];
+
+  // 曜日ヘッダー
+  for(let i=0;i<7;i++){
+    const div = document.createElement("div");
+    div.className="weekday";
+    div.textContent = w[i];
+    cal.appendChild(div);
+  }
 
   for(let i=0;i<firstDay;i++) cal.appendChild(document.createElement("div"));
 
-  for(let d=1;d<=lastDate;d++){
+  for(let d=1;d<=days;d++){
     const dateStr = `${y}-${m}-${d}`;
-    const box = document.createElement("div");
-    box.className = "day";
-    box.onclick = ()=>openModal(dateStr);
-    box.innerHTML = `<div class="day-number">${d}</div>`;
+    const div = document.createElement("div");
+    div.className="day";
+    div.onclick = ()=>openModal(dateStr);
 
-    const dayShifts = shifts[dateStr] || [];
-    const dailyAmounts = {}; // 名前ごとの日計
-    const timeline = Array(24*60).fill(0);
-    const who = Array(24*60).fill(null).map(()=>[]);
-
+    const dayShifts = shifts[dateStr]||[];
+    let shiftText = "";
     dayShifts.forEach((s,i)=>{
-      const sh = s.start.split(":").map(Number);
-      const eh = s.end.split(":").map(Number);
-      const bs = s.breakStart ? s.breakStart.split(":").map(Number) : null;
-      const be = s.breakEnd ? s.breakEnd.split(":").map(Number) : null;
-      for(let t=sh[0]*60+sh[1]; t<eh[0]*60+eh[1]; t++){
-        if(bs && t>=bs[0]*60+bs[1] && t<be[0]*60+be[1]) continue;
-        timeline[t]++;
-        who[t].push(s.name);
-      }
+      const bt = s.breakStart&&s.breakEnd ? `（休憩 ${s.breakStart}〜${s.breakEnd}）` : "";
+      shiftText += `${s.name}：${s.start}〜${s.end}${bt}`;
+      shiftText += "\n";
     });
 
-    // 社員がいる時間帯は他は0円
-    timeline.forEach((c,i)=>{
-      const namesHere = who[i];
-      const hasStaff = namesHere.includes("社員");
-      namesHere.forEach(n=>{
-        if(n==="社員") return;
-        if(hasStaff) return;
-        const per = timeline[i]==1?200/60:100/60;
-        dailyAmounts[n]=(dailyAmounts[n]||0)+per;
-      });
+    // 日ごとの報酬計算
+    const daily = calcDaily(dateStr);
+    let totalText = "";
+    Object.entries(daily).forEach(([n,v])=>{
+      if(v>0) totalText += `${n}：${Math.floor(v)}円\n`;
     });
 
-    // 出力
-    dayShifts.forEach((s,i)=>{
-      const bt = (s.breakStart && s.breakEnd)?`（休憩 ${s.breakStart}〜${s.breakEnd}）`:"";
-      let txt = `${s.name}：${s.start}〜${s.end}${bt}`;
-      if(s.name!=="社員") txt += dailyAmounts[s.name]?`\n${Math.round(dailyAmounts[s.name])}円`:"";
-      box.innerHTML += `<div class="shift">${txt} <button onclick="event.stopPropagation();editShift('${dateStr}',${i})">✎</button> <button onclick="event.stopPropagation();removeShift('${dateStr}',${i})">×</button></div>`;
-    });
-
-    cal.appendChild(box);
+    div.innerHTML = `<div class="day-number">${d}</div><div class="shift">${shiftText}${totalText}</div>`;
+    cal.appendChild(div);
   }
 
   renderMonthly();
 }
 
+/* ===== モーダル ===== */
+function openModal(date){
+  selectedDate = date;
+  document.getElementById("modalDate").textContent = date;
+  updateNameSelect();
+  document.getElementById("modal").style.display = "flex";
+}
+function closeModal(){
+  document.getElementById("modal").style.display = "none";
+  newNameInput.value = start.value = end.value = breakStart.value = breakEnd.value = "";
+}
+
+/* ===== 名前操作 ===== */
+function updateNameSelect(){
+  nameSelect.innerHTML="";
+  nameSelect.add(new Option("選択してください",""));
+  names.forEach(n=>nameSelect.add(new Option(n,n)));
+}
+
+function deleteName(){
+  const name = nameSelect.value;
+  if(!name) return;
+  if(!confirm(`${name} を削除しますか？（シフトは残ります）`)) return;
+  names = names.filter(n=>n!==name);
+  localStorage.setItem("names",JSON.stringify(names));
+  updateNameSelect();
+}
+
+/* ===== シフト保存 ===== */
+function saveShift(){
+  const name = newNameInput.value || nameSelect.value;
+  if(!name || !start.value || !end.value) return;
+
+  if(newNameInput.value && !names.includes(newNameInput.value)){
+    names.push(newNameInput.value);
+    localStorage.setItem("names",JSON.stringify(names));
+  }
+
+  if(!shifts[selectedDate]) shifts[selectedDate] = [];
+  shifts[selectedDate].push({
+    name,
+    start:start.value,
+    end:end.value,
+    breakStart:breakStart.value,
+    breakEnd:breakEnd.value
+  });
+
+  localStorage.setItem("shifts",JSON.stringify(shifts));
+  closeModal();
+  renderCalendar();
+}
+
+/* ===== 日報酬計算 ===== */
+function calcDaily(date){
+  const res={};
+  const timeline=Array(24*60).fill(0);
+  const who = Array(24*60).fill(null).map(()=>[]);
+
+  (shifts[date]||[]).forEach(s=>{
+    const [sh,sm]=s.start.split(":").map(Number);
+    const [eh,em]=s.end.split(":").map(Number);
+    const bs = s.breakStart?s.breakStart.split(":").map(Number):null;
+    const be = s.breakEnd?s.breakEnd.split(":").map(Number):null;
+
+    for(let t=sh*60+sm;t<eh*60+em;t++){
+      if(bs && t>=bs[0]*60+bs[1] && t<be[0]*60+be[1]) continue;
+      timeline[t]++;
+      who[t].push(s.name);
+    }
+  });
+
+  timeline.forEach((c,i)=>{
+    const active = who[i];
+    if(active.includes("社員")) return; // 社員がいる時間は報酬なし
+    active.forEach(n=>{
+      const per = (active.length===1)?200/60:100/60;
+      res[n]=(res[n]||0)+per;
+    });
+  });
+
+  return res;
+}
+
+/* ===== 月合計 ===== */
 function renderMonthly(){
-  const y = +yearSel.value, m = +monthSel.value;
-  const totals = {};
+  const y = yearSel.value;
+  const m = monthSel.value;
+  const total = {};
   for(const date in shifts){
     if(!date.startsWith(`${y}-${m}-`)) continue;
-    const dayShifts = shifts[date];
-    const timeline = Array(24*60).fill(0);
-    const who = Array(24*60).fill(null).map(()=>[]);
-
-    dayShifts.forEach(s=>{
-      const sh = s.start.split(":").map(Number);
-      const eh = s.end.split(":").map(Number);
-      const bs = s.breakStart?s.breakStart.split(":").map(Number):null;
-      const be = s.breakEnd?s.breakEnd.split(":").map(Number):null;
-      for(let t=sh[0]*60+sh[1]; t<eh[0]*60+eh[1]; t++){
-        if(bs && t>=bs[0]*60+bs[1] && t<be[0]*60+be[1]) continue;
-        timeline[t]++; who[t].push(s.name);
-      }
-    });
-
-    timeline.forEach((c,i)=>{
-      const namesHere = who[i];
-      const hasStaff = namesHere.includes("社員");
-      namesHere.forEach(n=>{
-        if(n==="社員") return;
-        if(hasStaff) return;
-        const per = timeline[i]==1?200/60:100/60;
-        totals[n] = (totals[n]||0)+per;
-      });
+    const daily = calcDaily(date);
+    Object.entries(daily).forEach(([n,v])=>{
+      total[n] = (total[n]||0)+v;
     });
   }
-  const monthlyDiv = document.getElementById('monthly');
-  monthlyDiv.innerText = "月合計：\n" + Object.entries(totals).map(([n,v])=>`${n}：${Math.round(v)}円`).join("\n");
+  const div = document.getElementById("monthly");
+  div.innerText = Object.keys(total).length
+    ? "月合計：\n"+Object.entries(total).map(([n,v])=>`${n}：${Math.floor(v)}円`).join("\n")
+    : "";
 }
 
-// 編集・削除
-function removeShift(date,i){ shifts[date].splice(i,1); localStorage.setItem('shifts',JSON.stringify(shifts)); renderCalendar(); }
-function editShift(date,i){
-  const s = shifts[date][i];
-  openModal(date);
-  newNameInput.value = s.name;
-  startInput.value = s.start;
-  endInput.value = s.end;
-  breakStartInput.value = s.breakStart;
-  breakEndInput.value = s.breakEnd;
-  removeShift(date,i);
-}
-
+/* ===== 初期表示 ===== */
 renderCalendar();
 </script>
 </body>
