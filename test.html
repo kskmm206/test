@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<title>自責計算</title>
+<style>
+body { font-family: sans-serif; }
+h1 { text-align: center; }
+header { text-align: center; margin: 10px 0; }
+#ymSelect { font-size: 22px; font-weight: bold; }
+#calendar { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.week { text-align: center; font-weight: bold; }
+.day { border: 1px solid #ccc; min-height: 120px; padding: 4px; cursor: pointer; }
+.day-number { font-weight: bold; }
+.shift { font-size: 12px; white-space: pre-line; }
+#modal { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: none; justify-content: center; align-items: center; }
+#modalContent { background: #fff; padding: 15px; width: 320px; }
+select.small { width: 200px; }
+button { margin-top: 6px; }
+</style>
+</head>
+<body>
+<h1>自責計算</h1>
+<header>
+  <select id="year"></select> 年
+  <select id="month"></select> 月
+</header>
+<div id="calendar"></div>
+
+<div id="modal">
+  <div id="modalContent">
+    <h3 id="modalDate"></h3>
+    名前：
+    <select id="nameSelect" class="small">
+      <option value="">選択してください</option>
+    </select><br>
+    新しい名前：<input id="newName"><br><br>
+    出勤：<input type="time" id="start"><br>
+    退勤：<input type="time" id="end"><br>
+    休憩開始：<input type="time" id="breakStart"><br>
+    休憩終了：<input type="time" id="breakEnd"><br><br>
+    <button onclick="saveShift()">保存</button>
+    <button onclick="closeModal()">閉じる</button>
+  </div>
+</div>
+
+<script>
+const shifts = JSON.parse(localStorage.getItem('shifts')||'{}');
+let names = JSON.parse(localStorage.getItem('names')||'[]');
+if(!names.includes('社員')) names.unshift('社員');
+localStorage.setItem('names', JSON.stringify(names));
+
+const yearSel=document.getElementById('year');
+const monthSel=document.getElementById('month');
+const cal=document.getElementById('calendar');
+let selectedDate='';
+
+for(let y=2024;y<=2030;y++) yearSel.add(new Option(y,y));
+for(let m=1;m<=12;m++) monthSel.add(new Option(m,m));
+const now=new Date();
+yearSel.value=now.getFullYear();
+monthSel.value=now.getMonth()+1;
+
+yearSel.onchange=monthSel.onchange=render;
+
+function render(){
+  cal.innerHTML='';
+  const y=+yearSel.value,m=+monthSel.value;
+  const first=new Date(y,m-1,1).getDay();
+  const last=new Date(y,m,0).getDate();
+  ['日','月','火','水','木','金','土'].forEach(w=>{
+    const d=document.createElement('div');d.className='week';d.textContent=w;cal.appendChild(d);
+  });
+  for(let i=0;i<first;i++) cal.appendChild(document.createElement('div'));
+  for(let d=1;d<=last;d++){
+    const key=`${y}-${m}-${d}`;
+    const div=document.createElement('div');div.className='day';
+    div.innerHTML=`<div class='day-number'>${d}</div><div class='shift'>${renderDay(key)}</div>`;
+    div.onclick=()=>openModal(key);
+    cal.appendChild(div);
+  }
+}
+
+function renderDay(date){
+  const list=shifts[date]||[];
+  if(list.length===0) return '';
+  let txt='';
+  const hasEmployee=list.some(s=>s.name==='社員');
+  list.forEach(s=>{
+    const time=`${s.start}〜${s.end}`+(s.break?`（休憩 ${s.break}）`:'' );
+    if(s.name==='社員') txt+=`${s.name}：${time}\n`;
+    else if(!hasEmployee){
+      const people=list.filter(x=>x.name!=='社員').length;
+      const hours=(toMin(s.end)-toMin(s.start)-(s.breakMin||0))/60;
+      const money=Math.round(hours*200/people);
+      if(money>0) txt+=`${s.name}：${money}円\n`;
+    }
+  });
+  return txt.trim();
+}
+
+function openModal(date){
+  selectedDate=date;
+  document.getElementById('modal').style.display='flex';
+  document.getElementById('modalDate').textContent=date;
+  updateNameSelect();
+}
+function closeModal(){
+  document.getElementById('modal').style.display='none';
+  document.querySelectorAll('#modalContent input').forEach(i=>i.value='');
+}
+function updateNameSelect(){
+  const sel=document.getElementById('nameSelect');
+  sel.innerHTML='<option value="">選択してください</option>';
+  names.forEach(n=>sel.add(new Option(n,n)));
+}
+function toMin(t){ const[a,b]=t.split(':').map(Number);return a*60+b; }
+
+function saveShift(){
+  const name=document.getElementById('newName').value||document.getElementById('nameSelect').value;
+  if(!name) return;
+  if(!names.includes(name)){
+    names.push(name);
+    localStorage.setItem('names',JSON.stringify(names));
+  }
+  if(!shifts[selectedDate]) shifts[selectedDate]=[];
+  const bs=breakStart.value,be=breakEnd.value;
+  shifts[selectedDate].push({
+    name,
+    start:start.value,
+    end:end.value,
+    break:bs&&be?`${bs}〜${be}`:'',
+    breakMin:bs&&be?toMin(be)-toMin(bs):0
+  });
+  localStorage.setItem('shifts',JSON.stringify(shifts));
+  closeModal();
+  render();
+}
+
+render();
+</script>
+</body>
+</html>
