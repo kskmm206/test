@@ -5,277 +5,279 @@
 <title>自責計算</title>
 
 <style>
-body { font-family: sans-serif; }
-h1 { text-align:center; }
+body{font-family:sans-serif;padding:20px}
+h1{text-align:center}
 
-#ym {
-  text-align:center;
-  font-size:20px;
-  margin-bottom:10px;
+.ym{
+ display:flex;
+ justify-content:center;
+ align-items:center;
+ gap:6px;
+ font-size:30px;
+ margin:15px 0
 }
-#ym select { font-size:20px; }
+.ym select{font-size:24px}
 
-#week {
-  display:grid;
-  grid-template-columns:repeat(7,1fr);
-  text-align:center;
-  font-weight:bold;
+.calendar{
+ display:grid;
+ grid-template-columns:repeat(7,1fr);
+ gap:4px
 }
-
-#calendar {
-  display:grid;
-  grid-template-columns:repeat(7,1fr);
-  gap:4px;
+.header{font-weight:bold;text-align:center}
+.day{
+ border:1px solid #ccc;
+ min-height:180px;
+ padding:4px;
+ cursor:pointer
 }
+.date{font-weight:bold;text-align:right}
+.shift{font-size:12px;margin-top:2px}
+.money{font-weight:bold;margin-top:2px}
+.actions{display:flex;gap:4px;margin-top:2px}
 
-.day {
-  border:1px solid #ccc;
-  min-height:120px;
-  padding:4px;
-  font-size:12px;
-  cursor:pointer;
+#modal{
+ display:none;
+ position:fixed;
+ inset:0;
+ background:rgba(0,0,0,.4)
 }
-
-.shift { white-space:pre-line; }
-
-.bold { font-weight:bold; }
-
-#total {
-  margin-top:15px;
-  font-size:18px;
-  font-weight:bold;
-}
-
-#modal {
-  position:fixed; inset:0;
-  background:rgba(0,0,0,0.4);
-  display:none; justify-content:center; align-items:center;
+#modalContent{
+ background:#fff;
+ width:360px;
+ margin:80px auto;
+ padding:15px
 }
 
-#modalContent {
-  background:white;
-  padding:15px;
-  width:320px;
-}
+.name-row{display:flex;gap:6px;align-items:center}
+.name-row select{height:26px;width:260px}
 
-button { margin:2px; }
-
-.nameSelect {
-  width:200px;
+#monthly{
+ margin-top:20px;
+ font-size:22px;
+ font-weight:bold;
+ text-align:center
 }
 </style>
 </head>
 
 <body>
-
 <h1>自責計算</h1>
 
-<div id="ym">
-  <select id="year"></select> 年
-  <select id="month"></select> 月
+<div class="ym">
+<select id="year"></select>年
+<select id="month"></select>月
 </div>
 
-<div id="week">
-  <div>日</div><div>月</div><div>火</div><div>水</div>
-  <div>木</div><div>金</div><div>土</div>
-</div>
+<div class="calendar" id="calendar"></div>
 
-<div id="calendar"></div>
-
-<div id="total"></div>
-
-<!-- 入力モーダル -->
 <div id="modal">
-<div id="modalContent">
-<h3 id="modalDate"></h3>
+ <div id="modalContent">
+  <h3 id="modalDate"></h3>
 
-名前：
-<select id="nameSelect" class="nameSelect">
-  <option value="">選択してください</option>
-</select>
-<button onclick="deleteName()">名前削除</button><br><br>
+  <div class="name-row">
+   <select id="nameSel"></select>
+   <button onclick="addName()">＋</button>
+   <button onclick="deleteName()">－</button>
+  </div>
 
-新しい名前：<input id="newName"><br><br>
+  出勤 <input type="time" id="start"><br>
+  退勤 <input type="time" id="end"><br><br>
 
-出勤 <input type="time" id="start"><br>
-退勤 <input type="time" id="end"><br>
-休憩開始 <input type="time" id="breakStart"><br>
-休憩終了 <input type="time" id="breakEnd"><br><br>
-
-<button onclick="saveShift()">保存</button>
-<button onclick="closeModal()">閉じる</button>
+  <button onclick="saveShift()">保存</button>
+  <button onclick="closeModal()">キャンセル</button>
+ </div>
 </div>
-</div>
+
+<div id="monthly"></div>
 
 <script>
-const shifts = JSON.parse(localStorage.getItem("shifts")||"{}");
-let names = JSON.parse(localStorage.getItem("names")||'["社員"]');
-let editIndex = null;
-let selectedDate = "";
+/* ===== localStorage ===== */
+const L=k=>JSON.parse(localStorage.getItem(k)||'[]');
+const S=(k,v)=>localStorage.setItem(k,JSON.stringify(v));
 
-const yearSel = year.value;
-for(let y=2024;y<=2030;y++) year.add(new Option(y,y));
-for(let m=1;m<=12;m++) month.add(new Option(m,m));
+let shifts=L('shifts');
+let names=L('names');
+if(!names.includes('社員'))names.unshift('社員');
+S('names',names);
 
-year.value=new Date().getFullYear();
-month.value=new Date().getMonth()+1;
+let editIndex=null, selectedDate=null;
 
-year.onchange=month.onchange=render;
+/* ===== 年月 ===== */
+const yearSel=document.getElementById('year');
+const monthSel=document.getElementById('month');
+const now=new Date();
 
-function render(){
-  calendar.innerHTML="";
-  const y=+year.value, m=+month.value;
-  const first=new Date(y,m-1,1).getDay();
-  const last=new Date(y,m,0).getDate();
+for(let y=2024;y<=2028;y++)
+ yearSel.innerHTML+=`<option ${y===now.getFullYear()?'selected':''}>${y}</option>`;
+for(let m=1;m<=12;m++)
+ monthSel.innerHTML+=`<option ${m===now.getMonth()+1?'selected':''}>${m}</option>`;
+yearSel.onchange=monthSel.onchange=renderCalendar;
 
-  for(let i=0;i<first;i++) calendar.appendChild(document.createElement("div"));
+/* ===== 名前 ===== */
+const nameSel=document.getElementById('nameSel');
+function renderNames(){
+ nameSel.innerHTML='<option value="">選択してください</option>';
+ names.forEach(n=>nameSel.innerHTML+=`<option>${n}</option>`);
+}
+renderNames();
 
-  for(let d=1;d<=last;d++){
-    const key=`${y}-${m}-${d}`;
-    const div=document.createElement("div");
-    div.className="day";
-    div.innerHTML=`<b>${d}</b><div class="shift">${
-      (shifts[key]||[]).map((s,i)=>{
-        const money=calcDayMoney(key,s.name);
-        return `${s.name}：${s.start}〜${s.end}`+
-        (s.breakStart?`（休憩 ${s.breakStart}〜${s.breakEnd}）`:"")+
-        (money>0 && s.name!=="社員"?`\n<span class="bold">${money}円</span>`:"")+
-        `<br><button onclick="editShift('${key}',${i})">編集</button>`+
-        `<button onclick="deleteShift('${key}',${i})">削除</button>`;
-      }).join("<hr>")
-    }</div>`;
-    div.onclick=()=>openModal(key);
-    calendar.appendChild(div);
-  }
-  calcMonthTotal();
+function addName(){
+ const n=prompt('名前');
+ if(!n||names.includes(n))return;
+ names.push(n);S('names',names);renderNames();
+}
+function deleteName(){
+ const n=nameSel.value;
+ if(!n||n==='社員')return alert('社員は削除不可');
+ names=names.filter(x=>x!==n);S('names',names);renderNames();
 }
 
-function openModal(date){
-  selectedDate=date;
-  modal.style.display="flex";
-  modalDate.textContent=date;
-  editIndex=null;
-  updateNameSelect();
+/* ===== カレンダー ===== */
+const calendar=document.getElementById('calendar');
+
+function renderCalendar(){
+ calendar.innerHTML='';
+ const y=yearSel.value,m=monthSel.value;
+
+ ['日','月','火','水','木','金','土']
+ .forEach(w=>calendar.innerHTML+=`<div class="header">${w}</div>`);
+
+ const first=new Date(y,m-1,1).getDay();
+ for(let i=0;i<first;i++)calendar.innerHTML+='<div></div>';
+
+ const days=new Date(y,m,0).getDate();
+ for(let d=1;d<=days;d++){
+  const date=`${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+  const box=document.createElement('div');
+  box.className='day';
+  box.onclick=()=>openModal(date);
+
+  box.innerHTML=`<div class="date">${d}</div>`;
+
+  shifts.filter(s=>s.date===date).forEach((s,i)=>{
+   box.innerHTML+=`
+    <div class="shift">
+     ${s.name}：${s.start}~${s.end}
+     <div class="actions">
+      <button onclick="event.stopPropagation();editShift('${date}',${i})">編集</button>
+      <button onclick="event.stopPropagation();removeShift('${date}',${i})">削除</button>
+     </div>
+    </div>`;
+  });
+
+  calcDaily(date).forEach(r=>{
+   box.innerHTML+=`<div class="money">${r.name}：${r.money}円</div>`;
+  });
+
+  calendar.appendChild(box);
+ }
+ renderMonthly();
 }
 
-function closeModal(){
-  modal.style.display="none";
-  document.querySelectorAll("input").forEach(i=>i.value="");
-}
+/* ===== モーダル ===== */
+const modal=document.getElementById('modal');
+const modalDate=document.getElementById('modalDate');
+const start=document.getElementById('start');
+const end=document.getElementById('end');
 
-function updateNameSelect(){
-  nameSelect.innerHTML='<option value="">選択してください</option>';
-  names.forEach(n=>nameSelect.add(new Option(n,n)));
+function openModal(d){
+ selectedDate=d;editIndex=null;
+ modalDate.textContent=d;
+ modal.style.display='block';
+ nameSel.value='';start.value=end.value='';
 }
+function closeModal(){modal.style.display='none'}
 
 function saveShift(){
-  let name=newName.value||nameSelect.value;
-  if(!name)return;
-
-  if(newName.value && !names.includes(newName.value)){
-    names.push(newName.value);
-    localStorage.setItem("names",JSON.stringify(names));
-  }
-
-  if(!shifts[selectedDate]) shifts[selectedDate]=[];
-  const obj={
-    name,start:start.value,end:end.value,
-    breakStart:breakStart.value,breakEnd:breakEnd.value
-  };
-
-  if(editIndex!==null) shifts[selectedDate][editIndex]=obj;
-  else shifts[selectedDate].push(obj);
-
-  localStorage.setItem("shifts",JSON.stringify(shifts));
-  closeModal();
-  render();
+ if(!nameSel.value||!start.value||!end.value)return;
+ const obj={date:selectedDate,name:nameSel.value,start:start.value,end:end.value};
+ editIndex!==null?shifts[editIndex]=obj:shifts.push(obj);
+ S('shifts',shifts);closeModal();renderCalendar();
 }
-
 function editShift(date,i){
-  event.stopPropagation();
-  openModal(date);
-  const s=shifts[date][i];
-  editIndex=i;
-  nameSelect.value=s.name;
-  start.value=s.start;
-  end.value=s.end;
-  breakStart.value=s.breakStart;
-  breakEnd.value=s.breakEnd;
+ const list=shifts.filter(s=>s.date===date);
+ const s=list[i];
+ editIndex=shifts.indexOf(s);
+ selectedDate=date;
+ modalDate.textContent=date;
+ modal.style.display='block';
+ nameSel.value=s.name;start.value=s.start;end.value=s.end;
+}
+function removeShift(date,i){
+ const list=shifts.filter(s=>s.date===date);
+ shifts=shifts.filter(s=>s!==list[i]);
+ S('shifts',shifts);renderCalendar();
 }
 
-function deleteShift(date,i){
-  event.stopPropagation();
-  shifts[date].splice(i,1);
-  localStorage.setItem("shifts",JSON.stringify(shifts));
-  render();
+/* ===== 計算（シフト単位） ===== */
+function calcDaily(date){
+ const toM=t=>+t.split(':')[0]*60+ +t.split(':')[1];
+ const dayShifts=shifts.filter(s=>s.date===date);
+ const valid=dayShifts.some(s=>!(toM(s.start)>615&&toM(s.end)<1320));
+ if(!valid)return [];
+
+ const minutes=[...Array(1440)].map(()=>[]);
+ dayShifts.forEach((s,i)=>{
+  let st=toM(s.start),ed=Math.min(toM(s.end),1320);
+  for(let t=Math.max(st,0);t<ed;t++)minutes[t].push(i);
+ });
+
+ const results=[];
+
+ dayShifts.forEach((s,i)=>{
+  let solo=0, overlap=0;
+
+  minutes.forEach(arr=>{
+   if(!arr.includes(i))return;
+   if(arr.some(j=>dayShifts[j].name==='社員'))return;
+
+   if(arr.length===1) solo+=200/60;
+   if(arr.length===2) overlap+=100/60;
+  });
+
+  solo=smartRound(solo);
+  overlap=smartRound(overlap);
+
+  if(solo>0)results.push({name:s.name,money:solo});
+  if(overlap>0)results.push({name:s.name,money:overlap});
+ });
+
+ return results;
 }
 
-function deleteName(){
-  const n=nameSelect.value;
-  if(n==="社員"||!n)return;
-  names=names.filter(x=>x!==n);
-  localStorage.setItem("names",JSON.stringify(names));
-  updateNameSelect();
-}
 
-function timeToMin(t){
-  const[a,b]=t.split(":").map(Number);
-  return a*60+b;
-}
+/* ===== 月合計 ===== */
+function renderMonthly(){
+ const totals={};
+ const ym=`${yearSel.value}-${String(monthSel.value).padStart(2,'0')}`;
 
-function calcDayMoney(date,name){
-  if(name==="社員") return 0;
-  const dayShifts=shifts[date]||[];
-  const target=dayShifts.filter(s=>s.name===name)[0];
-  if(!target) return 0;
+ // 対象月の日付ごとに処理
+ shifts
+  .filter(s=>s.date.startsWith(ym))
+  .map(s=>s.date)
+  .filter((v,i,a)=>a.indexOf(v)===i)
+  .forEach(d=>{
+   calcDaily(d).forEach(r=>{
+    totals[r.name]=(totals[r.name]||0)+r.money;
+   });
+  });
 
-  let start=Math.max(timeToMin(target.start),615);
-  let end=Math.min(timeToMin(target.end),1320);
-  if(start>=end) return 0;
-
-  if(target.breakStart){
-    const bs=timeToMin(target.breakStart);
-    const be=timeToMin(target.breakEnd);
-    end-=Math.max(0,Math.min(end,be)-Math.max(start,bs));
+ // 表示
+ monthly.innerHTML='';
+ Object.entries(totals).forEach(([name,money])=>{
+  if(money>0){
+   monthly.innerHTML+=`${name}：${money}円<br>`;
   }
-
-  let money=0;
-  for(let t=start;t<end;t++){
-    const working=dayShifts.filter(s=>{
-      if(s.name==="社員"){
-        const st=timeToMin(s.start),en=timeToMin(s.end);
-        return t>=st && t<en;
-      }
-      return false;
-    });
-    if(working.length>0) continue;
-
-    const others=dayShifts.filter(s=>{
-      if(s.name===name||s.name==="社員")return false;
-      const st=timeToMin(s.start),en=timeToMin(s.end);
-      return t>=st && t<en;
-    });
-    money+=others.length>=1?100/60:200/60;
-  }
-  return Math.floor(money);
+ });
 }
 
-function calcMonthTotal(){
-  const y=year.value, m=month.value;
-  const total={};
-  for(const d in shifts){
-    if(!d.startsWith(`${y}-${m}-`))continue;
-    shifts[d].forEach(s=>{
-      if(s.name==="社員")return;
-      total[s.name]=(total[s.name]||0)+calcDayMoney(d,s.name);
-    });
-  }
-  totalDiv.textContent="月合計：\n"+Object.entries(total)
-    .map(([n,v])=>`${n}：${v}円`).join("\n");
+
+function smartRound(x){
+ const f=x-Math.floor(x);
+ return f>0.999?Math.round(x):Math.floor(x);
 }
 
-render();
+renderCalendar();
 </script>
-
 </body>
 </html>
